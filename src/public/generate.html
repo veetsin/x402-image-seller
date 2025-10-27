@@ -59,52 +59,58 @@
 
 <script>
     // Accepts protocol configuration
-    const acceptsConfig = {
-        scheme: "exact",
-        network: "base",
-        maxAmountRequired: "0.1",
-        resource: "https://x402-image.onrender.com/generate",
-        description: "AI Image Generation Service - Pay with crypto to generate images",
-        mimeType: "image/png",
-        payTo: "0x9a629c2dd7f5c43c11665f69877d08638d1288e6",
-        maxTimeoutSeconds: 3600,
-        asset: "USDC",
-        
-        outputSchema: {
-            input: {
-                type: "https",
-                method: "POST",
-                bodyType: "json",
-                bodyFields: {
-                    tx: {
-                        type: "string",
-                        description: "Payment transaction hash",
-                        required: true,
-                        pattern: "^0x[a-fA-F0-9]{64}$"
-                    },
-                    prompt: {
-                        type: "string",
-                        description: "Image generation prompt",
-                        required: true,
-                        minLength: 1,
-                        maxLength: 1000
+    const response = {
+        x402Version: 1,
+        accepts: [{
+            scheme: "exact",
+            network: "base",
+            maxAmountRequired: "0.1",
+            resource: "https://x402-image.onrender.com/generate",
+            description: "AI Image Generation Service - Pay with crypto to generate images",
+            mimeType: "image/png",
+            payTo: "0x9a629c2dd7f5c43c11665f69877d08638d1288e6",
+            maxTimeoutSeconds: 3600,
+            asset: "USDC",
+
+            outputSchema: {
+                input: {
+                    type: "http",  // 修正：https → http
+                    method: "POST",
+                    bodyType: "json",
+                    bodyFields: {
+                        tx: {
+                            type: "string",
+                            description: "Payment transaction hash",
+                            required: true,
+                            pattern: "^0x[a-fA-F0-9]{64}$"
+                        },
+                        prompt: {
+                            type: "string",
+                            description: "Image generation prompt",
+                            required: true,
+                            minLength: 1,
+                            maxLength: 1000
+                        }
                     }
+                },
+                output: {
+                    type: "binary",
+                    contentType: "image/png",
+                    description: "Generated image in PNG format"
                 }
             },
-            output: {
-                type: "binary",
-                contentType: "image/png",
-                description: "Generated image in PNG format"
+
+            extra: {
+                apiVersion: "1.0",
+                provider: "X402 Nano Banana",
+                supportedModels: ["gemini-2.5-flash-image"],
+                imageSize: "1024x1024"
             }
-        },
-        
-        extra: {
-            apiVersion: "1.0",
-            provider: "X402 Nano Banana",
-            supportedModels: ["gemini-2.5-flash-image"],
-            imageSize: "1024x1024"
-        }
+        }]
     };
+
+    // Since we are only dealing with the first payment option in this UI
+    const protocolConfig = response.accepts[0];
 
     const form = document.getElementById('generateForm');
     const txHashInput = document.getElementById('txHash');
@@ -114,7 +120,7 @@
     const generatedImage = document.getElementById('generatedImage');
     const loadingSpinner = document.getElementById('loadingSpinner');
 
-    // Fetch payment info from the server or use acceptsConfig
+    // Fetch payment info from the server or use response
     async function fetchPaymentInfo() {
         try {
             // Try to fetch from server first
@@ -123,24 +129,24 @@
                 const data = await response.json();
                 updatePaymentUI(data);
             } else {
-                // Fallback to acceptsConfig
+                // Fallback to response
                 updatePaymentUI({
-                    priceInUSDC: acceptsConfig.maxAmountRequired,
-                    networkId: acceptsConfig.network,
-                    walletAddress: acceptsConfig.payTo,
-                    asset: acceptsConfig.asset,
-                    timeout: acceptsConfig.maxTimeoutSeconds
+                    priceInUSDC: protocolConfig.maxAmountRequired,
+                    networkId: protocolConfig.network,
+                    walletAddress: protocolConfig.payTo,
+                    asset: protocolConfig.asset,
+                    timeout: protocolConfig.maxTimeoutSeconds
                 });
             }
         } catch (error) {
             console.error('Error fetching payment info:', error);
-            // Use acceptsConfig as fallback
+            // Use response as fallback
             updatePaymentUI({
-                priceInUSDC: acceptsConfig.maxAmountRequired,
-                networkId: acceptsConfig.network,
-                walletAddress: acceptsConfig.payTo,
-                asset: acceptsConfig.asset,
-                timeout: acceptsConfig.maxTimeoutSeconds
+                priceInUSDC: protocolConfig.maxAmountRequired,
+                networkId: protocolConfig.network,
+                walletAddress: protocolConfig.payTo,
+                asset: protocolConfig.asset,
+                timeout: protocolConfig.maxTimeoutSeconds
             });
         }
     }
@@ -168,7 +174,7 @@
     // Real-time transaction hash validation
     txHashInput.addEventListener('input', () => {
         const txHash = txHashInput.value.trim();
-        const schema = acceptsConfig.outputSchema.input.bodyFields.tx;
+        const schema = protocolConfig.outputSchema.input.bodyFields.tx;
         const txHashRegex = new RegExp(schema.pattern);
 
         if (messageDiv.textContent.includes('Invalid Transaction Hash format')) {
@@ -200,11 +206,11 @@
         const prompt = promptInput.value.trim();
 
         try {
-            const response = await fetch(acceptsConfig.resource, {
-                method: acceptsConfig.outputSchema.input.method,
+            const apiResponse = await fetch(protocolConfig.resource, {
+                method: protocolConfig.outputSchema.input.method,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Accept': acceptsConfig.mimeType,
+                    'Accept': protocolConfig.mimeType,
                 },
                 body: JSON.stringify({
                     tx: txHash,
@@ -214,16 +220,16 @@
 
             loadingSpinner.style.display = 'none';
 
-            if (response.status === 402) {
-                const errorData = await response.json();
+            if (apiResponse.status === 402) {
+                const errorData = await apiResponse.json();
                 messageDiv.className = 'error';
                 messageDiv.innerHTML = `<strong>Payment Error:</strong> ${errorData.message || 'Payment verification failed.'}`;
                 messageDiv.style.display = 'block';
-            } else if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Server error: ${response.status} - ${errorText}`);
+            } else if (!apiResponse.ok) {
+                const errorText = await apiResponse.text();
+                throw new Error(`Server error: ${apiResponse.status} - ${errorText}`);
             } else {
-                const imageBlob = await response.blob();
+                const imageBlob = await apiResponse.blob();
                 const imageUrl = URL.createObjectURL(imageBlob);
                 generatedImage.src = imageUrl;
                 generatedImage.style.display = 'block';
@@ -237,8 +243,8 @@
         }
     });
 
-    // Expose acceptsConfig for external access
-    window.acceptsConfig = acceptsConfig;
+    // Expose response for external access
+    window.acceptsConfig = response;
 </script>
 </body>
 </html>
