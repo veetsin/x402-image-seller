@@ -63,7 +63,7 @@
         scheme: "exact",
         network: "base",
         maxAmountRequired: "0.1",
-        resource: "/generate",
+        resource: "https://x402-image.onrender.com/generate",
         description: "AI Image Generation Service - Pay with crypto to generate images",
         mimeType: "image/png",
         payTo: "0x9a629c2dd7f5c43c11665f69877d08638d1288e6",
@@ -72,7 +72,7 @@
         
         outputSchema: {
             input: {
-                type: "http",
+                type: "https",
                 method: "POST",
                 bodyType: "json",
                 bodyFields: {
