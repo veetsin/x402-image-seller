@@ -1,0 +1,42 @@
+{
+  "name": "x402-image-seller",
+  "version": "1.0.0",
+  "description": "X402 AI Image Generation Service with payment verification",
+  "main": "dist/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "build": "tsc && npm run copy-static",
+    "start": "node dist/server.js",
+    "copy-static": "copyfiles -u 1 src/public/**/* src/index.html dist/",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "x402",
+    "payment",
+    "ai",
+    "image-generation",
+    "base",
+    "usdc"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@coinbase/cdp-sdk": "^1.38.4",
+    "axios": "^1.12.2",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.15.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.4",
+    "@types/node": "^24.9.1",
+    "copyfiles": "^2.4.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X402 Nano Banana</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 20px; background-color: #f4f4f9; color: #333; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+        input[type="text"], textarea { width: calc(100% - 22px); padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; transition: border-color 0.3s; }
+        input[type="text"]:focus, textarea:focus { border-color: #007bff; outline: none; }
+        button { background-color: #007bff; color: white; padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; transition: background-color 0.3s ease; width: 100%; }
+        button:hover { background-color: #0056b3; }
+        #message { margin-top: 20px; padding: 15px; border-radius: 6px; display: none; word-break: break-word; }
+        #message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        #message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        #imageContainer { margin-top: 30px; text-align: center; }
+        #imageContainer img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 6px; display: none; }
+        .payment-info { background-color: #e9f7ef; border-left: 5px solid #28a745; padding: 15px; margin-bottom: 25px; border-radius: 4px; }
+        .payment-info p { margin: 5px 0; }
+        .payment-info code { background-color: #fff; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; }
+        .loading-spinner { display: none; border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #007bff; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 20px auto 0; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>X402 Nano Banana</h1>
+
+    <div class="payment-info">
+        <h2>Payment Required</h2>
+        <p>To generate an image, please send <strong><span id="price">...</span> <span id="asset">...</span></strong> to the following address on the <strong><span id="network">...</span></strong> network:</p>
+        <p><strong><code id="walletAddress">...</code></strong></p>
+        <p>Timeout: <span id="timeout">...</span> seconds</p>
+        <p>After sending, enter the transaction hash below.</p>
+    </div>
+
+    <form id="generateForm">
+        <div class="form-group">
+            <label for="txHash">Payment Transaction Hash:</label>
+            <input type="text" id="txHash" name="txHash" placeholder="e.g., 0x..." required>
+        </div>
+        <div class="form-group">
+            <label for="prompt">Image Prompt:</label>
+            <textarea id="prompt" name="prompt" rows="3" placeholder="e.g., a photo of a cat astronaut in space" required></textarea>
+        </div>
+        <button type="submit">Generate Image</button>
+    </form>
+
+    <div class="loading-spinner" id="loadingSpinner"></div>
+    <div id="message"></div>
+    <div id="imageContainer">
+        <img id="generatedImage" alt="Generated Image">
+    </div>
+</div>
+
+<script>
+    // Accepts protocol configuration
+    const acceptsConfig = {
+        scheme: "exact",
+        network: "base",
+        maxAmountRequired: "0.1",
+        resource: "/generate",
+        description: "AI Image Generation Service - Pay with crypto to generate images",
+        mimeType: "image/png",
+        payTo: "0x9a629c2dd7f5c43c11665f69877d08638d1288e6",
+        maxTimeoutSeconds: 3600,
+        asset: "USDC",
+        
+        outputSchema: {
+            input: {
+                type: "http",
+                method: "POST",
+                bodyType: "json",
+                bodyFields: {
+                    tx: {
+                        type: "string",
+                        description: "Payment transaction hash",
+                        required: true,
+                        pattern: "^0x[a-fA-F0-9]{64}$"
+                    },
+                    prompt: {
+                        type: "string",
+                        description: "Image generation prompt",
+                        required: true,
+                        minLength: 1,
+                        maxLength: 1000
+                    }
+                }
+            },
+            output: {
+                type: "binary",
+                contentType: "image/png",
+                description: "Generated image in PNG format"
+            }
+        },
+        
+        extra: {
+            apiVersion: "1.0",
+            provider: "X402 Nano Banana",
+            supportedModels: ["gemini-2.5-flash-image"],
+            imageSize: "1024x1024"
+        }
+    };
+
+    const form = document.getElementById('generateForm');
+    const txHashInput = document.getElementById('txHash');
+    const promptInput = document.getElementById('prompt');
+    const messageDiv = document.getElementById('message');
+    const submitButton = document.querySelector('button[type="submit"]');
+    const generatedImage = document.getElementById('generatedImage');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+
+    // Fetch payment info from the server or use acceptsConfig
+    async function fetchPaymentInfo() {
+        try {
+            // Try to fetch from server first
+            const response = await fetch('/payment-info');
+            if (response.ok) {
+                const data = await response.json();
+                updatePaymentUI(data);
+            } else {
+                // Fallback to acceptsConfig
+                updatePaymentUI({
+                    priceInUSDC: acceptsConfig.maxAmountRequired,
+                    networkId: acceptsConfig.network,
+                    walletAddress: acceptsConfig.payTo,
+                    asset: acceptsConfig.asset,
+                    timeout: acceptsConfig.maxTimeoutSeconds
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching payment info:', error);
+            // Use acceptsConfig as fallback
+            updatePaymentUI({
+                priceInUSDC: acceptsConfig.maxAmountRequired,
+                networkId: acceptsConfig.network,
+                walletAddress: acceptsConfig.payTo,
+                asset: acceptsConfig.asset,
+                timeout: acceptsConfig.maxTimeoutSeconds
+            });
+        }
+    }
+
+    function updatePaymentUI(data) {
+        document.getElementById('price').textContent = data.priceInUSDC;
+        document.getElementById('network').textContent = data.networkId;
+        document.getElementById('walletAddress').textContent = data.walletAddress;
+        document.getElementById('asset').textContent = data.asset || 'USDC';
+        document.getElementById('timeout').textContent = data.timeout || 3600;
+    }
+
+    // On page load, fetch payment info and pre-fill form from URL params
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchPaymentInfo();
+
+        // Pre-fill form fields from URL query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const txFromUrl = urlParams.get('tx');
+        const promptFromUrl = urlParams.get('prompt');
+        if (txFromUrl) txHashInput.value = txFromUrl;
+        if (promptFromUrl) promptInput.value = promptFromUrl;
+    });
+
+    // Real-time transaction hash validation
+    txHashInput.addEventListener('input', () => {
+        const txHash = txHashInput.value.trim();
+        const schema = acceptsConfig.outputSchema.input.bodyFields.tx;
+        const txHashRegex = new RegExp(schema.pattern);
+
+        if (messageDiv.textContent.includes('Invalid Transaction Hash format')) {
+            messageDiv.style.display = 'none';
+            messageDiv.textContent = '';
+        }
+
+        if (txHash && !txHashRegex.test(txHash)) {
+            txHashInput.style.borderColor = '#dc3545';
+            submitButton.disabled = true;
+            submitButton.style.backgroundColor = '#6c757d';
+        } else {
+            txHashInput.style.borderColor = '#ddd';
+            submitButton.disabled = false;
+            submitButton.style.backgroundColor = '#007bff';
+        }
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        // Reset UI
+        messageDiv.style.display = 'none';
+        generatedImage.style.display = 'none';
+        generatedImage.src = '';
+        loadingSpinner.style.display = 'block';
+
+        const txHash = txHashInput.value.trim();
+        const prompt = promptInput.value.trim();
+
+        try {
+            const response = await fetch(acceptsConfig.resource, {
+                method: acceptsConfig.outputSchema.input.method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': acceptsConfig.mimeType,
+                },
+                body: JSON.stringify({
+                    tx: txHash,
+                    prompt: prompt
+                })
+            });
+
+            loadingSpinner.style.display = 'none';
+
+            if (response.status === 402) {
+                const errorData = await response.json();
+                messageDiv.className = 'error';
+                messageDiv.innerHTML = `<strong>Payment Error:</strong> ${errorData.message || 'Payment verification failed.'}`;
+                messageDiv.style.display = 'block';
+            } else if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Server error: ${response.status} - ${errorText}`);
+            } else {
+                const imageBlob = await response.blob();
+                const imageUrl = URL.createObjectURL(imageBlob);
+                generatedImage.src = imageUrl;
+                generatedImage.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error during image generation:', error);
+            loadingSpinner.style.display = 'none';
+            messageDiv.className = 'error';
+            messageDiv.textContent = `An unexpected error occurred: ${error.message}`;
+            messageDiv.style.display = 'block';
+        }
+    });
+
+    // Expose acceptsConfig for external access
+    window.acceptsConfig = acceptsConfig;
+</script>
+</body>
+</html>

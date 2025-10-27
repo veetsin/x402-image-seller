@@ -1,0 +1,42 @@
+# 依赖
+node_modules/
+package-lock.json
+
+
+# 构建输出
+dist/
+build/
+*.js
+*.js.map
+
+# 日志
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 测试
+coverage/
+.nyc_output/
+
+# 临时文件
+*.tmp
+*.temp
+generated_image.png
+output_image.*
+
+# 钱包数据（如果有）
+wallet-data.json
+processed_txs.txt
