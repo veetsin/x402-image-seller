@@ -32,7 +32,7 @@ async function initializeServices() {
         }
 
         // 初始化支付验证器
-        paymentVerifier = new PaymentVerifier(
+        paymentVerifier = await PaymentVerifier.create(
             process.env.BASE_RPC_URL!,
             process.env.USDC_CONTRACT_ADDRESS!,
             walletAddress,
@@ -180,13 +180,84 @@ app.get("/", (req: Request, res: Response) => {
 
 // 主图像生成端点 - GET 请求用于显示 HTML 页面(不需要支付)
 app.get("/generate", (req: Request, res: Response) => {
-    res.status(402);
-    // 返回 HTML 文件
-    res.sendFile(path.join(__dirname, "public", "generate.html"), (err) => {
-        if (err) {
-            console.error("sendFile 错误:", err);
-            res.send("<h1>Payment Required</h1>");
-        }
+    // 检查请求来源：浏览器 vs API 客户端
+    const acceptHeader = req.get('Accept') || '';
+    const userAgent = req.get('User-Agent') || '';
+
+    // 判断是否为浏览器请求
+    const isBrowserRequest = acceptHeader.includes('text/html') ||
+        userAgent.includes('Mozilla') ||
+        userAgent.includes('Chrome') ||
+        userAgent.includes('Safari');
+
+    if (isBrowserRequest) {
+        // 浏览器请求 - 返回 HTML 页面
+        res.status(402);
+        return res.sendFile(path.join(__dirname, "public", "generate.html"), (err) => {
+            if (err) {
+                console.error("sendFile 错误:", err);
+                res.send("<h1>Payment Required</h1>");
+            }
+        });
+    }
+
+    // API 请求 - 返回 X402 协议 JSON
+    const priceInUSDC = process.env.PRICE_IN_USDC || "0.1";
+    const amountInSmallestUnit = (parseFloat(priceInUSDC) * 1e6).toString();
+
+    // 动态构建 resource URL
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const resourceUrl = `${protocol}://${host}/generate`;
+
+    res.status(402).json({
+        x402Version: 1,
+        accepts: [{
+            scheme: "exact",
+            network: process.env.NETWORK_ID || "base",
+            maxAmountRequired: amountInSmallestUnit,
+            resource: resourceUrl,
+            description: "AI Image Generation Service - Pay with crypto to generate images",
+            mimeType: "image/png",
+            payTo: walletAddress,
+            maxTimeoutSeconds: 3600,
+            asset: process.env.USDC_CONTRACT_ADDRESS || "USDC",
+
+            outputSchema: {
+                input: {
+                    type: "http",
+                    method: "POST",
+                    bodyType: "json",
+                    bodyFields: {
+                        tx: {
+                            type: "string",
+                            description: "Payment transaction hash",
+                            required: true,
+                            pattern: "^0x[a-fA-F0-9]{64}$"
+                        },
+                        prompt: {
+                            type: "string",
+                            description: "Image generation prompt",
+                            required: true,
+                            minLength: 1,
+                            maxLength: 1000
+                        }
+                    }
+                },
+                output: {
+                    type: "binary",
+                    contentType: "image/png",
+                    description: "Generated image in PNG format"
+                }
+            },
+
+            extra: {
+                apiVersion: "1.0",
+                provider: "X402 Nano Banana",
+                supportedModels: ["gemini-2.5-flash-image"],
+                imageSize: "1024x1024"
+            }
+        }]
     });
 });
 

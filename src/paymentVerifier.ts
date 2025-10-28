@@ -1,8 +1,7 @@
 import { ethers } from "ethers";
-import * as fs from 'fs';
-import * as path from 'path';
+import Redis from 'ioredis';
 
-
+const PROCESSED_TXS_KEY = 'processed_txs';
 
 const USDC_ABI = [
   "event Transfer(address indexed from, address indexed to, uint256 value)",
@@ -11,11 +10,11 @@ const USDC_ABI = [
 
 export class PaymentVerifier {
   private provider: ethers.JsonRpcProvider;
+  private redis: Redis;
   private usdcContract: ethers.Contract;
   private walletAddress: string;
   private priceInUSDC: number;
   private processedTxs: Set<string>;
-  private txsFilePath: string;
 
   constructor(
     rpcUrl: string,
@@ -23,6 +22,11 @@ export class PaymentVerifier {
     walletAddress: string,
     priceInUSDC: number
   ) {
+    this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+      // 如果你使用像 Upstash 这样的服务，token 可能需要在这里配置
+      password: process.env.REDIS_PASSWORD || 'your-password',
+    });
+
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
     this.usdcContract = new ethers.Contract(
       usdcContractAddress,
@@ -32,47 +36,46 @@ export class PaymentVerifier {
     this.walletAddress = walletAddress.toLowerCase();
     this.priceInUSDC = priceInUSDC;
     this.processedTxs = new Set<string>();
-    
-    // 确定存储路径。在 Render 上，应将 STORAGE_DIR 环境变量设置为持久化磁盘的挂载路径（例如 /data）。
-    // 如果环境变量未设置，则默认为当前工作目录，适用于本地开发。
-    const storageDirectory = process.env.STORAGE_DIR || process.cwd();
-    this.txsFilePath = path.join(storageDirectory, 'processed_txs.txt');
-
-    // 确保目录存在 (主要用于本地开发，Render 的挂载点会自动存在)
-    const dir = path.dirname(this.txsFilePath);
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-    
-    this.loadProcessedTxs();
   }
 
   /**
-   * 从文件中加载已处理的交易哈希
+   * 创建并异步初始化 PaymentVerifier 实例。
+   * 这是推荐的实例化方式。
    */
-  private loadProcessedTxs(): void {
+  public static async create(
+    rpcUrl: string,
+    usdcContractAddress: string,
+    walletAddress: string,
+    priceInUSDC: number
+  ): Promise<PaymentVerifier> {
+    const verifier = new PaymentVerifier(rpcUrl, usdcContractAddress, walletAddress, priceInUSDC);
+    await verifier.initialize();
+    return verifier;
+  }
+
+  /**
+   * 从 Redis 加载已处理的交易哈希来初始化内存中的 Set。
+   */
+  private async initialize(): Promise<void> {
     try {
-      if (fs.existsSync(this.txsFilePath)) {
-        const data = fs.readFileSync(this.txsFilePath, 'utf8');
-        const txs = data.split('\n').filter(tx => tx.length > 0);
-        this.processedTxs = new Set<string>(txs);
-        console.log(`  📂 已从 ${this.txsFilePath} 加载 ${this.processedTxs.size} 个已处理的交易。`);
-      } else {
-        console.log(`  📂 未找到交易记录文件 ${this.txsFilePath}，将在需要时创建新文件。`);
-      }
+      const txs = await this.redis.smembers(PROCESSED_TXS_KEY);
+      this.processedTxs = new Set<string>(txs);
+      console.log(`  📂 已从 Redis 加载 ${this.processedTxs.size} 个已处理的交易。`);
     } catch (error: any) {
-      console.error("  ❌ 加载已处理交易时出错:", error.message);
+      console.error("  ❌ 从 Redis 加载已处理交易时出错:", error.message);
+      // 在 Redis 连接失败时，程序仍可继续运行，但无法防止交易重放
+      // 你可以根据业务需求决定是否在此处抛出错误以终止程序
     }
   }
 
   /**
-   * 将新的交易哈希追加到文件
+   * 将新的交易哈希保存到 Redis
    */
   private async appendTxHash(txHash: string): Promise<void> {
     try {
-      await fs.promises.appendFile(this.txsFilePath, `${txHash}\n`);
+      await this.redis.sadd(PROCESSED_TXS_KEY, txHash);
     } catch (error: any) {
-      console.error(`  ❌ 保存已处理交易至 ${this.txsFilePath} 时出错:`, error.message);
+      console.error(`  ❌ 保存已处理交易至 Redis 时出错:`, error.message);
     }
   }
 
@@ -85,16 +88,13 @@ export class PaymentVerifier {
 
     // 从内存 Set 中移除
     if (this.processedTxs.delete(lowerCaseTxHash)) {
-      console.log(`从内存中移除哈希: ${lowerCaseTxHash}`);
+      console.log(`  🗑️ 从内存中移除哈希: ${lowerCaseTxHash}`);
       try {
-        // 从文件中移除
-        const data = await fs.promises.readFile(this.txsFilePath, 'utf8');
-        const txs = data.split('\n').filter(tx => tx.toLowerCase() !== lowerCaseTxHash);
-        await fs.promises.writeFile(this.txsFilePath, txs.join('\n'));
-        console.log(`成功从文件 ${this.txsFilePath} 中移除哈希。`);
+        // 从 Redis 中移除
+        await this.redis.srem(PROCESSED_TXS_KEY, lowerCaseTxHash);
+        console.log(`  ✓ 成功从 Redis 中移除哈希。`);
       } catch (error: any) {
-        console.error(`  ❌ 从文件 ${this.txsFilePath} 移除哈希时出错:`, error.message);
-        // 即使文件操作失败，内存中的记录也已移除，下次服务重启时会从文件重新加载。
+        console.error(`  ❌ 从 Redis 移除哈希时出错:`, error.message);
       }
     }
   }
@@ -225,13 +225,19 @@ export class PaymentVerifier {
   async clearProcessedTxs(): Promise<void> {
     this.processedTxs.clear();
     try {
-      if (fs.existsSync(this.txsFilePath)) {
-        await fs.promises.writeFile(this.txsFilePath, '');
-      }
-      console.log(`  🗑️  已清理处理记录（包括文件 ${this.txsFilePath}）`);
+      await this.redis.del(PROCESSED_TXS_KEY);
+      console.log(`  🗑️  已清理 Redis 中的已处理交易记录 (key: ${PROCESSED_TXS_KEY})`);
     } catch (error: any) {
-      console.error("  ❌ 清理已处理交易文件时出错:", error.message);
+      console.error("  ❌ 清理 Redis 记录时出错:", error.message);
     }
+  }
+
+  /**
+   * 关闭 Redis 连接
+   */
+  public disconnect(): void {
+    this.redis.disconnect();
+    console.log("  🔌 Redis 连接已关闭。");
   }
 
   /**
