@@ -23,8 +23,8 @@ export class PaymentVerifier {
     priceInUSDC: number
   ) {
     this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-      // 如果你使用像 Upstash 这样的服务，token 可能需要在这里配置
-      password: process.env.REDIS_PASSWORD || 'your-password',
+      // If you are using a service like Upstash, the token may need to be configured here
+      password: process.env.REDIS_PASSWORD,
     });
 
     this.provider = new ethers.JsonRpcProvider(rpcUrl);
@@ -39,8 +39,8 @@ export class PaymentVerifier {
   }
 
   /**
-   * 创建并异步初始化 PaymentVerifier 实例。
-   * 这是推荐的实例化方式。
+   * Creates and asynchronously initializes a PaymentVerifier instance.
+   * This is the recommended way to instantiate.
    */
   public static async create(
     rpcUrl: string,
@@ -54,53 +54,49 @@ export class PaymentVerifier {
   }
 
   /**
-   * 从 Redis 加载已处理的交易哈希来初始化内存中的 Set。
+   * Loads processed transaction hashes from Redis to initialize the in-memory Set.
    */
   private async initialize(): Promise<void> {
     try {
       const txs = await this.redis.smembers(PROCESSED_TXS_KEY);
       this.processedTxs = new Set<string>(txs);
-      console.log(`  📂 已从 Redis 加载 ${this.processedTxs.size} 个已处理的交易。`);
+      console.log(`  📂 Loaded ${this.processedTxs.size} processed transactions from Redis.`);
     } catch (error: any) {
-      console.error("  ❌ 从 Redis 加载已处理交易时出错:", error.message);
-      // 在 Redis 连接失败时，程序仍可继续运行，但无法防止交易重放
-      // 你可以根据业务需求决定是否在此处抛出错误以终止程序
+      console.error("  ❌ Error loading processed transactions from Redis:", error.message);
+      // If the Redis connection fails, the program can still continue, but it cannot prevent transaction replay attacks.
+      // You can decide whether to throw an error here to terminate the program based on your business requirements.
     }
   }
 
   /**
-   * 将新的交易哈希保存到 Redis
+   * Saves a new transaction hash to Redis.
    */
   private async appendTxHash(txHash: string): Promise<void> {
     try {
       await this.redis.sadd(PROCESSED_TXS_KEY, txHash);
     } catch (error: any) {
-      console.error(`  ❌ 保存已处理交易至 Redis 时出错:`, error.message);
+      console.error(`  ❌ Error saving processed transaction to Redis:`, error.message);
     }
   }
 
-  /**
-   * 从已处理列表中移除一个交易哈希（用于失败回滚）。
-   * @param txHash 要移除的交易哈希。
-   */
   public async removeProcessedTx(txHash: string): Promise<void> {
     const lowerCaseTxHash = txHash.toLowerCase();
 
-    // 从内存 Set 中移除
+    // Remove from the in-memory Set
     if (this.processedTxs.delete(lowerCaseTxHash)) {
-      console.log(`  🗑️ 从内存中移除哈希: ${lowerCaseTxHash}`);
+      console.log(`  🗑️ Removed hash from memory: ${lowerCaseTxHash}`);
       try {
-        // 从 Redis 中移除
+        // Remove from Redis
         await this.redis.srem(PROCESSED_TXS_KEY, lowerCaseTxHash);
-        console.log(`  ✓ 成功从 Redis 中移除哈希。`);
+        console.log(`  ✓ Successfully removed hash from Redis.`);
       } catch (error: any) {
-        console.error(`  ❌ 从 Redis 移除哈希时出错:`, error.message);
+        console.error(`  ❌ Error removing hash from Redis:`, error.message);
       }
     }
   }
 
   /**
-   * 验证 USDC 转账交易
+   * Verifies a USDC transfer transaction.
    */
   async verifyPayment(txHash: string): Promise<{
     valid: boolean;
@@ -110,43 +106,43 @@ export class PaymentVerifier {
     try {
       const lowerCaseTxHash = txHash.toLowerCase();
 
-      // 检查是否已经使用过此交易
+      // Check if this transaction has already been used
       if (this.processedTxs.has(lowerCaseTxHash)) {
         return {
           valid: false,
-          error: "此交易已被使用"
+          error: "This transaction has already been used."
         };
       }
 
-      console.log(`  📡 查询交易: ${txHash}`);
+      console.log(`  📡 Querying transaction: ${txHash}`);
 
-      // 获取交易收据
+      // Get transaction receipt
       const receipt = await this.provider.getTransactionReceipt(txHash);
 
       if (!receipt) {
         return {
           valid: false,
-          error: "交易未找到或未确认，请等待区块确认后重试"
+          error: "Transaction not found or not yet confirmed. Please wait for block confirmation and try again."
         };
       }
 
-      console.log(`  ✓ 交易已确认，区块号: ${receipt.blockNumber}`);
+      console.log(`  ✓ Transaction confirmed in block: ${receipt.blockNumber}`);
 
-      // 检查交易是否成功
+      // Check if the transaction was successful
       if (receipt.status !== 1) {
         return {
           valid: false,
-          error: "交易失败（status: 0）"
+          error: "Transaction failed (status: 0)."
         };
       }
 
-      // 解析 Transfer 事件
+      // Parse Transfer events
       let transferFound = false;
       let transferAmount = 0;
 
       for (const log of receipt.logs) {
         try {
-          // 只解析 USDC 合约的日志
+          // Only parse logs from the USDC contract
           if (log.address.toLowerCase() !== this.usdcContract.target.toString().toLowerCase()) {
             continue;
           }
@@ -160,19 +156,19 @@ export class PaymentVerifier {
             const to = parsedLog.args.to.toLowerCase();
             const value = parsedLog.args.value;
 
-            console.log(`  🔍 发现 Transfer 事件: to=${to.substring(0, 10)}..., value=${value}`);
+            console.log(`  🔍 Found Transfer event: to=${to.substring(0, 10)}..., value=${value}`);
 
-            // 检查接收地址是否匹配
+            // Check if the recipient address matches
             if (to === this.walletAddress) {
               transferFound = true;
-              // USDC 有 6 位小数
+              // USDC has 6 decimals
               transferAmount = parseFloat(ethers.formatUnits(value, 6));
-              console.log(`  ✓ 接收地址匹配，金额: ${transferAmount} USDC`);
+              console.log(`  ✓ Recipient address matched. Amount: ${transferAmount} USDC`);
               break;
             }
           }
         } catch (e) {
-          // 忽略无法解析的日志
+          // Ignore logs that cannot be parsed
           continue;
         }
       }
@@ -180,7 +176,7 @@ export class PaymentVerifier {
       if (!transferFound) {
         return {
           valid: false,
-          error: `未找到向地址 ${this.walletAddress} 的 USDC 转账`
+          error: `USDC transfer to address ${this.walletAddress} not found.`
         };
       }
 
@@ -188,15 +184,15 @@ export class PaymentVerifier {
         return {
           valid: false,
           amount: transferAmount,
-          error: `支付金额不足。需要 ${this.priceInUSDC} USDC，实际 ${transferAmount} USDC`
+          error: `Insufficient payment amount. Required: ${this.priceInUSDC} USDC, Paid: ${transferAmount} USDC.`
         };
       }
 
-      // 验证成功，记录此交易
+      // Verification successful, record this transaction
       this.processedTxs.add(lowerCaseTxHash);
       await this.appendTxHash(lowerCaseTxHash);
 
-      console.log(`  ✅ 支付验证成功！金额: ${transferAmount} USDC`);
+      console.log(`  ✅ Payment verification successful! Amount: ${transferAmount} USDC`);
 
       return {
         valid: true,
@@ -204,44 +200,44 @@ export class PaymentVerifier {
       };
 
     } catch (error: any) {
-      console.error("  ❌ 支付验证错误:", error.message);
+      console.error("  ❌ Payment verification error:", error.message);
       return {
         valid: false,
-        error: error.message || "验证过程中发生错误"
+        error: error.message || "An error occurred during verification."
       };
     }
   }
 
   /**
-   * 获取钱包地址
+   * Gets the wallet address.
    */
   getWalletAddress(): string {
     return this.walletAddress;
   }
 
   /**
-   * 清理已处理交易记录（用于测试）
+   * Clears processed transaction records (for testing purposes).
    */
   async clearProcessedTxs(): Promise<void> {
     this.processedTxs.clear();
     try {
       await this.redis.del(PROCESSED_TXS_KEY);
-      console.log(`  🗑️  已清理 Redis 中的已处理交易记录 (key: ${PROCESSED_TXS_KEY})`);
+      console.log(`  🗑️  Cleared processed transaction records in Redis (key: ${PROCESSED_TXS_KEY})`);
     } catch (error: any) {
-      console.error("  ❌ 清理 Redis 记录时出错:", error.message);
+      console.error("  ❌ Error clearing Redis records:", error.message);
     }
   }
 
   /**
-   * 关闭 Redis 连接
+   * Closes the Redis connection.
    */
   public disconnect(): void {
     this.redis.disconnect();
-    console.log("  🔌 Redis 连接已关闭。");
+    console.log("  🔌 Redis connection closed.");
   }
 
   /**
-   * 获取已处理交易数量
+   * Gets the count of processed transactions.
    */
   getProcessedTxCount(): number {
     return this.processedTxs.size;

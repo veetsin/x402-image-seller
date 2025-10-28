@@ -14,9 +14,11 @@
         input[type="text"]:focus, textarea:focus { border-color: #007bff; outline: none; }
         button { background-color: #007bff; color: white; padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; transition: background-color 0.3s ease; width: 100%; }
         button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
         #message { margin-top: 20px; padding: 15px; border-radius: 6px; display: none; word-break: break-word; }
         #message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         #message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        #message.warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
         #imageContainer { margin-top: 30px; text-align: center; }
         #imageContainer img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 6px; display: none; }
         .payment-info { background-color: #e9f7ef; border-left: 5px solid #28a745; padding: 15px; margin-bottom: 25px; border-radius: 4px; }
@@ -24,6 +26,9 @@
         .payment-info code { background-color: #fff; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; }
         .loading-spinner { display: none; border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #007bff; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 20px auto 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .debug-info { margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 12px; color: #666; }
+        .debug-info summary { cursor: pointer; font-weight: 600; }
+        .debug-info pre { margin-top: 8px; background: white; padding: 8px; border-radius: 3px; overflow-x: auto; }
     </style>
 </head>
 <body>
@@ -58,7 +63,7 @@
 </div>
 
 <script>
-    // Accepts protocol configuration
+    // X402 Protocol Configuration
     const response = {
         x402Version: 1,
         accepts: [{
@@ -66,6 +71,7 @@
             network: "base",
             maxAmountRequired: "0.1",
             resource: "https://x402-image.onrender.com/generate",
+            // resource: "/generate",
             description: "AI Image Generation Service - Pay with crypto to generate images",
             mimeType: "image/png",
             payTo: "0x9a629c2dd7f5c43c11665f69877d08638d1288e6",
@@ -74,7 +80,7 @@
 
             outputSchema: {
                 input: {
-                    type: "http",  // 修正：https → http
+                    type: "http",
                     method: "POST",
                     bodyType: "json",
                     bodyFields: {
@@ -109,7 +115,6 @@
         }]
     };
 
-    // Since we are only dealing with the first payment option in this UI
     const protocolConfig = response.accepts[0];
 
     const form = document.getElementById('generateForm');
@@ -120,16 +125,14 @@
     const generatedImage = document.getElementById('generatedImage');
     const loadingSpinner = document.getElementById('loadingSpinner');
 
-    // Fetch payment info from the server or use response
+    // Fetch payment info from the server or use default config
     async function fetchPaymentInfo() {
         try {
-            // Try to fetch from server first
             const response = await fetch('/payment-info');
             if (response.ok) {
                 const data = await response.json();
                 updatePaymentUI(data);
             } else {
-                // Fallback to response
                 updatePaymentUI({
                     priceInUSDC: protocolConfig.maxAmountRequired,
                     networkId: protocolConfig.network,
@@ -140,7 +143,6 @@
             }
         } catch (error) {
             console.error('Error fetching payment info:', error);
-            // Use response as fallback
             updatePaymentUI({
                 priceInUSDC: protocolConfig.maxAmountRequired,
                 networkId: protocolConfig.network,
@@ -159,11 +161,54 @@
         document.getElementById('timeout').textContent = data.timeout || 3600;
     }
 
-    // On page load, fetch payment info and pre-fill form from URL params
+    // Parse and display error response with full details
+    function displayError(status, responseData, rawResponse) {
+        messageDiv.className = 'error';
+
+        let errorMessage = '<strong>Error:</strong> ';
+
+        // Handle different error response formats
+        if (responseData) {
+            if (responseData.error) {
+                errorMessage += `${responseData.error}`;
+                if (responseData.message) {
+                    errorMessage += ` - ${responseData.message}`;
+                }
+                if (responseData.providedTxHash) {
+                    errorMessage += `<br><small>Transaction: ${responseData.providedTxHash}</small>`;
+                }
+            } else if (responseData.message) {
+                errorMessage += responseData.message;
+            } else if (typeof responseData === 'string') {
+                errorMessage += responseData;
+            } else {
+                errorMessage += `HTTP ${status} - See details below`;
+            }
+        } else {
+            errorMessage += `HTTP ${status} - Request failed`;
+        }
+
+        // Add debug info for troubleshooting
+        const debugInfo = document.createElement('details');
+        debugInfo.className = 'debug-info';
+        debugInfo.innerHTML = `
+            <summary>Debug Information</summary>
+            <pre>${JSON.stringify({
+            status: status,
+            response: responseData,
+            raw: rawResponse ? rawResponse.substring(0, 500) : 'N/A'
+        }, null, 2)}</pre>
+        `;
+
+        messageDiv.innerHTML = errorMessage;
+        messageDiv.appendChild(debugInfo);
+        messageDiv.style.display = 'block';
+    }
+
+    // On page load
     document.addEventListener('DOMContentLoaded', () => {
         fetchPaymentInfo();
 
-        // Pre-fill form fields from URL query parameters
         const urlParams = new URLSearchParams(window.location.search);
         const txFromUrl = urlParams.get('tx');
         const promptFromUrl = urlParams.get('prompt');
@@ -185,11 +230,9 @@
         if (txHash && !txHashRegex.test(txHash)) {
             txHashInput.style.borderColor = '#dc3545';
             submitButton.disabled = true;
-            submitButton.style.backgroundColor = '#6c757d';
         } else {
             txHashInput.style.borderColor = '#ddd';
             submitButton.disabled = false;
-            submitButton.style.backgroundColor = '#007bff';
         }
     });
 
@@ -198,9 +241,11 @@
 
         // Reset UI
         messageDiv.style.display = 'none';
+        messageDiv.innerHTML = '';
         generatedImage.style.display = 'none';
         generatedImage.src = '';
         loadingSpinner.style.display = 'block';
+        submitButton.disabled = true;
 
         const txHash = txHashInput.value.trim();
         const prompt = promptInput.value.trim();
@@ -219,31 +264,57 @@
             });
 
             loadingSpinner.style.display = 'none';
+            submitButton.disabled = false;
 
-            if (apiResponse.status === 402) {
-                const errorData = await apiResponse.json();
-                messageDiv.className = 'error';
-                messageDiv.innerHTML = `<strong>Payment Error:</strong> ${errorData.message || 'Payment verification failed.'}`;
-                messageDiv.style.display = 'block';
-            } else if (!apiResponse.ok) {
-                const errorText = await apiResponse.text();
-                throw new Error(`Server error: ${apiResponse.status} - ${errorText}`);
+            // Get content type to determine response format
+            const contentType = apiResponse.headers.get('content-type') || '';
+
+            if (!apiResponse.ok) {
+                // Try to parse error response
+                let errorData = null;
+                let rawText = null;
+
+                try {
+                    if (contentType.includes('application/json')) {
+                        errorData = await apiResponse.json();
+                    } else {
+                        rawText = await apiResponse.text();
+                        // Try to parse as JSON anyway
+                        try {
+                            errorData = JSON.parse(rawText);
+                        } catch (e) {
+                            errorData = { message: rawText };
+                        }
+                    }
+                } catch (parseError) {
+                    console.error('Failed to parse error response:', parseError);
+                    errorData = { message: 'Failed to parse server response' };
+                }
+
+                displayError(apiResponse.status, errorData, rawText);
             } else {
+                // Success - display image
                 const imageBlob = await apiResponse.blob();
                 const imageUrl = URL.createObjectURL(imageBlob);
                 generatedImage.src = imageUrl;
                 generatedImage.style.display = 'block';
+
+                messageDiv.className = 'success';
+                messageDiv.innerHTML = '<strong>Success!</strong> Image generated successfully.';
+                messageDiv.style.display = 'block';
             }
         } catch (error) {
             console.error('Error during image generation:', error);
             loadingSpinner.style.display = 'none';
+            submitButton.disabled = false;
+
             messageDiv.className = 'error';
-            messageDiv.textContent = `An unexpected error occurred: ${error.message}`;
+            messageDiv.innerHTML = `<strong>Network Error:</strong> ${error.message}<br><small>Please check your connection and try again.</small>`;
             messageDiv.style.display = 'block';
         }
     });
 
-    // Expose response for external access
+    // Expose config for external access
     window.acceptsConfig = response;
 </script>
 </body>
