@@ -157,7 +157,7 @@ app.get("/generate", (req: Request, res: Response) => {
         accepts: [{
             scheme: "exact",
             network: process.env.NETWORK_ID || "base",
-            maxAmountRequired: 100000,
+            maxAmountRequired: "100000",
             resource: process.env.RESOURCE_URL,
             description: "X402 Nano Banana - Pay with crypto to generate images with Nano Banana",
             mimeType: "image/png",
