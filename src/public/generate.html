@@ -3,56 +3,282 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X402 Nano Banana</title>
+    <title>X402 Nano Banana - AI Image Generator</title>
+
+    <!-- Coinbase OnchainKit -->
+    <script src="https://cdn.jsdelivr.net/npm/@coinbase/onchainkit@0.38.15/dist/index.umd.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@coinbase/onchainkit@0.38.15/dist/index.css">
+
+    <!-- Wagmi & Viem -->
+    <script src="https://cdn.jsdelivr.net/npm/viem@2.21.54/dist/viem.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@wagmi/core@2.13.8/dist/index.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@wagmi/connectors@5.1.9/dist/index.umd.js"></script>
+
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 20px; background-color: #f4f4f9; color: #333; }
-        .container { max-width: 800px; margin: auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        h1 { color: #333; text-align: center; margin-bottom: 30px; }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
-        input[type="text"], textarea { width: calc(100% - 22px); padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; transition: border-color 0.3s; }
-        input[type="text"]:focus, textarea:focus { border-color: #007bff; outline: none; }
-        button { background-color: #007bff; color: white; padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: 600; transition: background-color 0.3s ease; width: 100%; }
-        button:hover { background-color: #0056b3; }
-        button:disabled { background-color: #6c757d; cursor: not-allowed; }
-        #message { margin-top: 20px; padding: 15px; border-radius: 6px; display: none; word-break: break-word; }
-        #message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        #message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        #message.warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
-        #imageContainer { margin-top: 30px; text-align: center; }
-        #imageContainer img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 6px; display: none; }
-        .payment-info { background-color: #e9f7ef; border-left: 5px solid #28a745; padding: 15px; margin-bottom: 25px; border-radius: 4px; }
-        .payment-info p { margin: 5px 0; }
-        .payment-info code { background-color: #fff; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; }
-        .loading-spinner { display: none; border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #007bff; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 20px auto 0; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .debug-info { margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 12px; color: #666; }
-        .debug-info summary { cursor: pointer; font-weight: 600; }
-        .debug-info pre { margin-top: 8px; background: white; padding: 8px; border-radius: 3px; overflow-x: auto; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            max-width: 700px;
+            width: 100%;
+            background: #fff;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 32px;
+            font-weight: 700;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .wallet-section {
+            background: linear-gradient(135deg, #f093fb15 0%, #f5576c15 100%);
+            border-left: 4px solid #f093fb;
+            padding: 20px;
+            margin-bottom: 25px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .wallet-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+        .status-dot.connected {
+            background: #4caf50;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .info-card {
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }
+        .info-card h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            color: #333;
+        }
+        .info-card p {
+            margin: 8px 0;
+            color: #555;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .info-card code {
+            background-color: rgba(0,0,0,0.05);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            color: #667eea;
+            font-weight: 600;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #333;
+            font-size: 15px;
+        }
+        textarea {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: all 0.3s ease;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 100px;
+        }
+        textarea:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        textarea::placeholder {
+            color: #999;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 32px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            width: 100%;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        button.secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        button.secondary:hover:not(:disabled) {
+            box-shadow: 0 8px 20px rgba(240, 147, 251, 0.4);
+        }
+        #message {
+            margin-top: 20px;
+            padding: 16px;
+            border-radius: 8px;
+            display: none;
+            word-break: break-word;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        #message.error {
+            background-color: #fee;
+            color: #c33;
+            border: 2px solid #fcc;
+        }
+        #message.success {
+            background-color: #efe;
+            color: #2a2;
+            border: 2px solid #cfc;
+        }
+        #message.info {
+            background-color: #e3f2fd;
+            color: #1976d2;
+            border: 2px solid #bbdefb;
+        }
+        #imageContainer {
+            margin-top: 30px;
+            text-align: center;
+        }
+        #imageContainer img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .loading-spinner {
+            display: none;
+            border: 4px solid rgba(102, 126, 234, 0.2);
+            border-left-color: #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .char-count {
+            text-align: right;
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+        .char-count.warning {
+            color: #ff9800;
+        }
+        .char-count.danger {
+            color: #f44336;
+        }
+        .hidden {
+            display: none !important;
+        }
+        @media (max-width: 600px) {
+            .container {
+                padding: 25px;
+            }
+            h1 {
+                font-size: 24px;
+            }
+        }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>X402 Nano Banana</h1>
+    <h1>🍌 X402 Nano Banana</h1>
+    <p class="subtitle">AI-Powered Image Generation with Crypto Payments</p>
 
-    <div class="payment-info">
-        <h2>Payment Required</h2>
-        <p>To generate an image, please send <strong><span id="price">...</span> <span id="asset">...</span></strong> to the following address on the <strong><span id="network">...</span></strong> network:</p>
-        <p><strong><code id="walletAddress">...</code></strong></p>
-        <p>Timeout: <span id="timeout">...</span> seconds</p>
-        <p>After sending, enter the transaction hash below.</p>
+    <!-- Wallet Connection Section -->
+    <div class="wallet-section">
+        <h2>👛 Wallet Connection</h2>
+        <div class="wallet-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="walletStatus">Not Connected</span>
+        </div>
+        <div style="margin-top: 15px;">
+            <button id="connectBtn" class="secondary" onclick="connectWallet()">Connect Wallet</button>
+            <button id="disconnectBtn" class="secondary hidden" onclick="disconnectWallet()">Disconnect</button>
+        </div>
+    </div>
+
+    <div class="info-card">
+        <h2>💳 Payment Information</h2>
+        <p>Price: <strong><code id="price">...</code> <span id="asset">USDC</span></strong></p>
+        <p>Network: <strong><code id="network">...</code></strong></p>
+        <p>Recipient: <strong><code id="walletAddress" style="font-size: 11px;">...</code></strong></p>
     </div>
 
     <form id="generateForm">
         <div class="form-group">
-            <label for="txHash">Payment Transaction Hash:</label>
-            <input type="text" id="txHash" name="txHash" placeholder="e.g., 0x..." required>
+            <label for="prompt">🎨 Describe Your Image:</label>
+            <textarea
+                    id="prompt"
+                    name="prompt"
+                    placeholder="Example: a majestic cat astronaut floating in space, surrounded by colorful nebulas and stars, photorealistic, 4k"
+                    maxlength="1000"
+                    required
+            ></textarea>
+            <div class="char-count" id="charCount">0 / 1000</div>
         </div>
-        <div class="form-group">
-            <label for="prompt">Image Prompt:</label>
-            <textarea id="prompt" name="prompt" rows="3" placeholder="e.g., a photo of a cat astronaut in space" required></textarea>
-        </div>
-        <button type="submit">Generate Image</button>
+        <button type="submit" id="submitBtn" disabled>💰 Pay & Generate</button>
     </form>
 
     <div class="loading-spinner" id="loadingSpinner"></div>
@@ -62,260 +288,447 @@
     </div>
 </div>
 
-<script>
-    // X402 Protocol Configuration
-    const response = {
-        x402Version: 1,
-        accepts: [{
-            scheme: "exact",
-            network: "base",
-            maxAmountRequired: "0.1",
-            resource: "https://x402-image.onrender.com/generate",
-            // resource: "/generate",
-            description: "X402 Nano Banana - Pay with crypto to generate images with Nano Banana",
-            mimeType: "image/png",
-            payTo: "0x9a629c2dd7f5c43c11665f69877d08638d1288e6",
-            maxTimeoutSeconds: 3600,
-            asset: "USDC",
-
-            outputSchema: {
-                input: {
-                    type: "http",
-                    method: "POST",
-                    bodyType: "json",
-                    bodyFields: {
-                        tx: {
-                            type: "string",
-                            description: "Payment transaction hash",
-                            required: true,
-                            pattern: "^0x[a-fA-F0-9]{64}$"
-                        },
-                        prompt: {
-                            type: "string",
-                            description: "Image generation prompt",
-                            required: true,
-                            minLength: 1,
-                            maxLength: 1000
-                        }
-                    }
-                },
-                output: {
-                    type: "binary",
-                    contentType: "image/png",
-                    description: "Generated image in PNG format"
-                }
-            },
-
-            extra: {
-                apiVersion: "1.0",
-                provider: "X402 Nano Banana",
-                supportedModels: ["gemini-2.5-flash-image"],
-                imageSize: "1024x1024"
-            }
-        }]
+<script type="module">
+    // Configuration
+    let config = {
+        priceInUSDC: "0.1",
+        networkId: "base-sepolia",
+        walletAddress: "",
+        usdcContract: ""
     };
 
-    const protocolConfig = response.accepts[0];
+    let walletConnected = false;
+    let userAddress = null;
+    let provider = null;
 
+    // DOM elements
     const form = document.getElementById('generateForm');
-    const txHashInput = document.getElementById('txHash');
     const promptInput = document.getElementById('prompt');
     const messageDiv = document.getElementById('message');
-    const submitButton = document.querySelector('button[type="submit"]');
+    const submitButton = document.getElementById('submitBtn');
     const generatedImage = document.getElementById('generatedImage');
     const loadingSpinner = document.getElementById('loadingSpinner');
+    const charCount = document.getElementById('charCount');
+    const statusDot = document.getElementById('statusDot');
+    const walletStatus = document.getElementById('walletStatus');
+    const connectBtn = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
 
-    // Fetch payment info from the server or use default config
+    // Fetch payment info from server
     async function fetchPaymentInfo() {
         try {
             const response = await fetch('/payment-info');
             if (response.ok) {
                 const data = await response.json();
+                config = data;
                 updatePaymentUI(data);
-            } else {
-                updatePaymentUI({
-                    priceInUSDC: protocolConfig.maxAmountRequired,
-                    networkId: protocolConfig.network,
-                    walletAddress: protocolConfig.payTo,
-                    asset: protocolConfig.asset,
-                    timeout: protocolConfig.maxTimeoutSeconds
-                });
             }
         } catch (error) {
             console.error('Error fetching payment info:', error);
-            updatePaymentUI({
-                priceInUSDC: protocolConfig.maxAmountRequired,
-                networkId: protocolConfig.network,
-                walletAddress: protocolConfig.payTo,
-                asset: protocolConfig.asset,
-                timeout: protocolConfig.maxTimeoutSeconds
-            });
         }
     }
 
     function updatePaymentUI(data) {
-        document.getElementById('price').textContent = data.priceInUSDC;
-        document.getElementById('network').textContent = data.networkId;
-        document.getElementById('walletAddress').textContent = data.walletAddress;
-        document.getElementById('asset').textContent = data.asset || 'USDC';
-        document.getElementById('timeout').textContent = data.timeout || 3600;
+        document.getElementById('price').textContent = data.priceInUSDC || '0.1';
+        document.getElementById('network').textContent = data.networkId || 'base-sepolia';
+        document.getElementById('asset').textContent = 'USDC';
+        document.getElementById('walletAddress').textContent = data.walletAddress || '...';
     }
 
-    // Parse and display error response with full details
-    function displayError(status, responseData, rawResponse) {
-        messageDiv.className = 'error';
+    // Network configuration
+    const NETWORKS = {
+        'base': {
+            chainId: '0x2105',  // 8453 (Base 主网)
+            chainName: 'Base',
+            rpcUrls: ['https://mainnet.base.org']
+        },
+        'base-sepolia': {
+            chainId: '0x14a34', // 84532 (Base Sepolia 测试网)
+            chainName: 'Base Sepolia',
+            rpcUrls: ['https://sepolia.base.org']
+        },
+        'ethereum': {
+            chainId: '0x1',  // 1 (Ethereum 主网)
+            chainName: 'Ethereum',
+            rpcUrls: ['https://rpc.ankr.com/eth']
+        },
+        'sepolia': {
+            chainId: '0xaa36a7', // 11155111 (Ethereum Sepolia)
+            chainName: 'Ethereum Sepolia',
+            rpcUrls: ['https://rpc.sepolia.org']
+        },
+        'polygon': {
+            chainId: '0x89',  // 137 (Polygon 主网)
+            chainName: 'Polygon',
+            rpcUrls: ['https://polygon-rpc.com']
+        },
+        'polygon-amoy': {
+            chainId: '0x13882', // 80002 (Polygon Amoy 测试网)
+            chainName: 'Polygon Amoy',
+            rpcUrls: ['https://rpc-amoy.polygon.technology']
+        },
+        'arbitrum': {
+            chainId: '0xa4b1', // 42161 (Arbitrum One)
+            chainName: 'Arbitrum One',
+            rpcUrls: ['https://arb1.arbitrum.io/rpc']
+        },
+        'arbitrum-sepolia': {
+            chainId: '0x66eee', // 421614 (Arbitrum Sepolia)
+            chainName: 'Arbitrum Sepolia',
+            rpcUrls: ['https://sepolia-rollup.arbitrum.io/rpc']
+        },
+        'optimism': {
+            chainId: '0xa', // 10 (Optimism Mainnet)
+            chainName: 'Optimism',
+            rpcUrls: ['https://mainnet.optimism.io']
+        },
+        'optimism-sepolia': {
+            chainId: '0xaa37dc', // 11155420 (Optimism Sepolia)
+            chainName: 'Optimism Sepolia',
+            rpcUrls: ['https://sepolia.optimism.io']
+        },
+        'bnb': {
+            chainId: '0x38', // 56 (BNB Smart Chain Mainnet)
+            chainName: 'BNB Smart Chain',
+            rpcUrls: ['https://bsc-dataseed.binance.org']
+        },
+        'bnb-testnet': {
+            chainId: '0x61', // 97 (BNB Smart Chain Testnet)
+            chainName: 'BNB Smart Chain Testnet',
+            rpcUrls: ['https://data-seed-prebsc-1-s1.binance.org:8545']
+        },
+        'avalanche': {
+            chainId: '0xa86a', // 43114 (Avalanche C-Chain)
+            chainName: 'Avalanche',
+            rpcUrls: ['https://api.avax.network/ext/bc/C/rpc']
+        },
+        'avalanche-fuji': {
+            chainId: '0xa869', // 43113 (Avalanche Fuji Testnet)
+            chainName: 'Avalanche Fuji',
+            rpcUrls: ['https://api.avax-test.network/ext/bc/C/rpc']
+        }
+    };
 
-        let errorMessage = '<strong>Error:</strong> ';
 
-        // Handle different error response formats
-        if (responseData) {
-            if (responseData.error) {
-                errorMessage += `${responseData.error}`;
-                if (responseData.message) {
-                    errorMessage += ` - ${responseData.message}`;
+    // Switch to correct network
+    async function switchNetwork() {
+        const targetNetwork = NETWORKS[config.networkId] || NETWORKS['base-sepolia'];
+
+        try {
+            // Try to switch to the network
+            await window.ethereum.request({
+                method: 'wallet_switchEthereumChain',
+                params: [{ chainId: targetNetwork.chainId }],
+            });
+            return true;
+        } catch (switchError) {
+            // This error code indicates that the chain has not been added to MetaMask
+            if (switchError.code === 4902) {
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [targetNetwork],
+                    });
+                    return true;
+                } catch (addError) {
+                    console.error('Failed to add network:', addError);
+                    throw new Error('Failed to add network to wallet');
                 }
-                if (responseData.providedTxHash) {
-                    errorMessage += `<br><small>Transaction: ${responseData.providedTxHash}</small>`;
-                }
-            } else if (responseData.message) {
-                errorMessage += responseData.message;
-            } else if (typeof responseData === 'string') {
-                errorMessage += responseData;
-            } else {
-                errorMessage += `HTTP ${status} - See details below`;
             }
+            throw switchError;
+        }
+    }
+
+    // Connect wallet using Web3 provider
+    window.connectWallet = async function() {
+        try {
+            showMessage('info', 'ℹ️ Connecting...', 'Please approve the wallet connection request.');
+
+            // Check if MetaMask or other Web3 wallet is installed
+            if (typeof window.ethereum === 'undefined') {
+                showMessage('error', '❌ No Wallet Found:',
+                    'Please install MetaMask, Coinbase Wallet, or another Web3 wallet to continue.');
+                return;
+            }
+
+            // Request account access
+            const accounts = await window.ethereum.request({
+                method: 'eth_requestAccounts'
+            });
+
+            userAddress = accounts[0];
+            provider = window.ethereum;
+
+            // Check and switch network
+            const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+            const targetNetwork = NETWORKS[config.networkId] || NETWORKS['base-sepolia'];
+
+            console.log('Current chain:', chainId, 'Target:', targetNetwork.chainId);
+
+            if (chainId !== targetNetwork.chainId) {
+                showMessage('info', '🔄 Switching Network...', `Please switch to ${targetNetwork.chainName} in your wallet.`);
+                await switchNetwork();
+            }
+
+            // Update UI
+            walletConnected = true;
+            statusDot.classList.add('connected');
+            walletStatus.textContent = `Connected: ${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+            connectBtn.classList.add('hidden');
+            disconnectBtn.classList.remove('hidden');
+            submitButton.disabled = promptInput.value.trim().length === 0;
+
+            hideMessage();
+            showMessage('success', '✅ Wallet Connected!', `Address: ${userAddress.substring(0, 10)}... on ${targetNetwork.chainName}`);
+
+        } catch (error) {
+            console.error('Wallet connection error:', error);
+            showMessage('error', '❌ Connection Failed:', error.message);
+        }
+    };
+
+    window.disconnectWallet = function() {
+        walletConnected = false;
+        userAddress = null;
+        provider = null;
+        statusDot.classList.remove('connected');
+        walletStatus.textContent = 'Not Connected';
+        connectBtn.classList.remove('hidden');
+        disconnectBtn.classList.add('hidden');
+        submitButton.disabled = true;
+        hideMessage();
+    };
+
+    // Character counter
+    promptInput.addEventListener('input', () => {
+        const length = promptInput.value.length;
+        const maxLength = 1000;
+        charCount.textContent = `${length} / ${maxLength}`;
+
+        if (length > 900) {
+            charCount.classList.add('danger');
+            charCount.classList.remove('warning');
+        } else if (length > 750) {
+            charCount.classList.add('warning');
+            charCount.classList.remove('danger');
         } else {
-            errorMessage += `HTTP ${status} - Request failed`;
+            charCount.classList.remove('warning', 'danger');
         }
 
-        // Add debug info for troubleshooting
-        const debugInfo = document.createElement('details');
-        debugInfo.className = 'debug-info';
-        debugInfo.innerHTML = `
-            <summary>Debug Information</summary>
-            <pre>${JSON.stringify({
-            status: status,
-            response: responseData,
-            raw: rawResponse ? rawResponse.substring(0, 500) : 'N/A'
-        }, null, 2)}</pre>
-        `;
+        // Enable/disable submit button
+        submitButton.disabled = !walletConnected || length === 0;
+    });
 
-        messageDiv.innerHTML = errorMessage;
-        messageDiv.appendChild(debugInfo);
+    // Display messages
+    function showMessage(type, title, content) {
+        messageDiv.className = type;
+        messageDiv.innerHTML = `<strong>${title}</strong> ${content}`;
         messageDiv.style.display = 'block';
     }
 
-    // On page load
-    document.addEventListener('DOMContentLoaded', () => {
-        fetchPaymentInfo();
+    function hideMessage() {
+        messageDiv.style.display = 'none';
+        messageDiv.innerHTML = '';
+    }
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const txFromUrl = urlParams.get('tx');
-        const promptFromUrl = urlParams.get('prompt');
-        if (txFromUrl) txHashInput.value = txFromUrl;
-        if (promptFromUrl) promptInput.value = promptFromUrl;
-    });
+    // Send USDC payment
+    async function sendPayment() {
+        // Ensure we're on the correct network
+        const targetNetwork = NETWORKS[config.networkId] || NETWORKS['base-sepolia'];
+        const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
 
-    // Real-time transaction hash validation
-    txHashInput.addEventListener('input', () => {
-        const txHash = txHashInput.value.trim();
-        const schema = protocolConfig.outputSchema.input.bodyFields.tx;
-        const txHashRegex = new RegExp(schema.pattern);
-
-        if (messageDiv.textContent.includes('Invalid Transaction Hash format')) {
-            messageDiv.style.display = 'none';
-            messageDiv.textContent = '';
+        if (currentChainId !== targetNetwork.chainId) {
+            showMessage('info', '🔄 Switching Network...', `Switching to ${targetNetwork.chainName}...`);
+            await switchNetwork();
         }
 
-        if (txHash && !txHashRegex.test(txHash)) {
-            txHashInput.style.borderColor = '#dc3545';
-            submitButton.disabled = true;
-        } else {
-            txHashInput.style.borderColor = '#ddd';
-            submitButton.disabled = false;
-        }
-    });
+        const amount = parseFloat(config.priceInUSDC);
+        const amountInSmallestUnit = Math.floor(amount * 1e6); // USDC has 6 decimals
 
+        // Encode transfer function call
+        const transferData = encodeTransferData(config.walletAddress, amountInSmallestUnit);
+
+        // Send transaction
+        const txHash = await window.ethereum.request({
+            method: 'eth_sendTransaction',
+            params: [{
+                from: userAddress,
+                to: config.usdcContract,
+                data: transferData,
+                gas: '0x186A0', // 100000 gas
+            }]
+        });
+
+        return txHash;
+    }
+
+    // Simple ABI encoding for transfer(address,uint256)
+    function encodeTransferData(to, amount) {
+        const methodId = '0xa9059cbb'; // transfer(address,uint256)
+        const addressParam = to.substring(2).padStart(64, '0');
+        const amountParam = amount.toString(16).padStart(64, '0');
+        return methodId + addressParam + amountParam;
+    }
+
+    // Handle form submission
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
 
+        if (!walletConnected) {
+            showMessage('error', '❌ Error:', 'Please connect your wallet first.');
+            return;
+        }
+
+        const prompt = promptInput.value.trim();
+
+        if (!prompt) {
+            showMessage('error', '❌ Error:', 'Please enter a prompt to generate an image.');
+            return;
+        }
+
         // Reset UI
-        messageDiv.style.display = 'none';
-        messageDiv.innerHTML = '';
+        hideMessage();
         generatedImage.style.display = 'none';
         generatedImage.src = '';
         loadingSpinner.style.display = 'block';
         submitButton.disabled = true;
-
-        const txHash = txHashInput.value.trim();
-        const prompt = promptInput.value.trim();
+        submitButton.textContent = '💳 Processing Payment...';
 
         try {
-            const apiResponse = await fetch(protocolConfig.resource, {
-                method: protocolConfig.outputSchema.input.method,
+            // Step 1: Ensure correct network
+            const targetNetwork = NETWORKS[config.networkId] || NETWORKS['base-sepolia'];
+            const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+
+            if (currentChainId !== targetNetwork.chainId) {
+                showMessage('info', '🔄 Network Check:', `Switching to ${targetNetwork.chainName}...`);
+                await switchNetwork();
+            }
+
+            // Step 2: Send payment
+            showMessage('info', 'ℹ️ Payment Required:', 'Please approve the USDC transfer in your wallet...');
+
+            const txHash = await sendPayment();
+            console.log('Payment transaction:', txHash);
+
+            submitButton.textContent = '⏳ Generating Image...';
+            showMessage('info', 'ℹ️ Payment Sent:', 'Waiting for confirmation and generating your image...');
+
+            // Step 2: Generate image with payment proof
+            const response = await fetch('/generate', {
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Accept': protocolConfig.mimeType,
+                    'Accept': 'image/png',
+                    'X-Payment-Tx': txHash // Include payment tx hash
                 },
-                body: JSON.stringify({
-                    tx: txHash,
-                    prompt: prompt
-                })
+                body: JSON.stringify({ prompt })
             });
 
             loadingSpinner.style.display = 'none';
             submitButton.disabled = false;
+            submitButton.textContent = '💰 Pay & Generate';
 
-            // Get content type to determine response format
-            const contentType = apiResponse.headers.get('content-type') || '';
-
-            if (!apiResponse.ok) {
-                // Try to parse error response
+            if (!response.ok) {
                 let errorData = null;
-                let rawText = null;
+                const contentType = response.headers.get('content-type') || '';
 
                 try {
                     if (contentType.includes('application/json')) {
-                        errorData = await apiResponse.json();
+                        errorData = await response.json();
                     } else {
-                        rawText = await apiResponse.text();
-                        // Try to parse as JSON anyway
-                        try {
-                            errorData = JSON.parse(rawText);
-                        } catch (e) {
-                            errorData = { message: rawText };
-                        }
+                        const text = await response.text();
+                        errorData = { message: text };
                     }
-                } catch (parseError) {
-                    console.error('Failed to parse error response:', parseError);
-                    errorData = { message: 'Failed to parse server response' };
+                } catch (e) {
+                    errorData = { message: 'Unknown error occurred' };
                 }
 
-                displayError(apiResponse.status, errorData, rawText);
+                const errorMsg = errorData.message || errorData.error || 'Image generation failed';
+                showMessage('error', `❌ Error (${response.status}):`, errorMsg);
             } else {
                 // Success - display image
-                const imageBlob = await apiResponse.blob();
+                const imageBlob = await response.blob();
                 const imageUrl = URL.createObjectURL(imageBlob);
                 generatedImage.src = imageUrl;
                 generatedImage.style.display = 'block';
+                generatedImage.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-                messageDiv.className = 'success';
-                messageDiv.innerHTML = '<strong>Success!</strong> Image generated successfully.';
-                messageDiv.style.display = 'block';
+                showMessage('success', '✨ Success!', 'Your image has been generated successfully!');
+
+                // Clear the prompt for next generation
+                promptInput.value = '';
+                charCount.textContent = '0 / 1000';
+                charCount.classList.remove('warning', 'danger');
+                submitButton.disabled = true;
             }
         } catch (error) {
-            console.error('Error during image generation:', error);
+            console.error('Error:', error);
             loadingSpinner.style.display = 'none';
             submitButton.disabled = false;
+            submitButton.textContent = '💰 Pay & Generate';
 
-            messageDiv.className = 'error';
-            messageDiv.innerHTML = `<strong>Network Error:</strong> ${error.message}<br><small>Please check your connection and try again.</small>`;
-            messageDiv.style.display = 'block';
+            if (error.code === 4001) {
+                showMessage('info', 'ℹ️ Cancelled:', 'Payment was cancelled by user.');
+            } else {
+                showMessage('error', '❌ Error:',
+                    `${error.message}<br><small>Please check your wallet and try again.</small>`);
+            }
         }
     });
 
-    // Expose config for external access
-    window.acceptsConfig = response;
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchPaymentInfo();
+
+        // Check if wallet is already connected
+        if (window.ethereum) {
+            window.ethereum.request({ method: 'eth_accounts' })
+                .then(accounts => {
+                    if (accounts.length > 0) {
+                        userAddress = accounts[0];
+                        provider = window.ethereum;
+                        walletConnected = true;
+                        statusDot.classList.add('connected');
+                        walletStatus.textContent = `Connected: ${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+                        connectBtn.classList.add('hidden');
+                        disconnectBtn.classList.remove('hidden');
+                    }
+                });
+
+            // Listen for network changes
+            window.ethereum.on('chainChanged', (chainId) => {
+                console.log('Network changed to:', chainId);
+                const targetNetwork = NETWORKS[config.networkId] || NETWORKS['base-sepolia'];
+                if (chainId !== targetNetwork.chainId) {
+                    showMessage('info', '⚠️ Wrong Network:',
+                        `Please switch to ${targetNetwork.chainName} network to make payments.`);
+                } else {
+                    hideMessage();
+                }
+            });
+
+            // Listen for account changes
+            window.ethereum.on('accountsChanged', (accounts) => {
+                if (accounts.length === 0) {
+                    // User disconnected wallet
+                    window.disconnectWallet();
+                } else if (accounts[0] !== userAddress) {
+                    // User switched account
+                    userAddress = accounts[0];
+                    walletStatus.textContent = `Connected: ${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+                    showMessage('info', '🔄 Account Changed:', `Now using ${userAddress.substring(0, 10)}...`);
+                }
+            });
+        }
+
+        // Load prompt from URL if present
+        const urlParams = new URLSearchParams(window.location.search);
+        const promptFromUrl = urlParams.get('prompt');
+        if (promptFromUrl) {
+            promptInput.value = promptFromUrl;
+            promptInput.dispatchEvent(new Event('input'));
+        }
+    });
 </script>
 </body>
 </html>

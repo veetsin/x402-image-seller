@@ -8,9 +8,8 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
-// 为 generate.html 提供静态文件服务
+// 为静态文件提供服务
 app.use(express.static(path.join(__dirname, 'public')));
-
 
 let walletAddress: string;
 let imageService: ImageService;
@@ -44,6 +43,7 @@ async function initializeServices() {
             process.env.GEMINI_API_KEY_X402!,
             process.env.GEMINI_API_URL!
         );
+
         console.log("✅ [DEBUG] Gemini API Key being used:", process.env.GEMINI_API_KEY_X402);
         console.log(`\n=== X402 服务配置 ===`);
         console.log(`收款地址: ${walletAddress}`);
@@ -58,89 +58,41 @@ async function initializeServices() {
     }
 }
 
-// X402 Payment Middleware
-function paymentMiddleware(priceInUSDC: string) {
+// 支付验证中间件 (轻量版)
+function paymentMiddleware() {
     return async (req: Request, res: Response, next: NextFunction) => {
         try {
-            // 优先从 header 获取 (API), 其次从 body (POST), 最后从 query (GET)
+            // 从 header 或 body 获取交易哈希
             const paymentTxHash =
-                (req.headers['x-402-payment-tx'] as string) ||
-                (req.body && req.body.tx) ||
-                (req.query.tx as string);
+                (req.headers['x-payment-tx'] as string) ||
+                (req.body && req.body.tx);
 
-            // 如果没有支付信息,返回 402 或 HTML 页面
             if (!paymentTxHash) {
-                // *** 内容协商 ***
-                // 如果客户端(如浏览器)接受 HTML,则显示 UI 页面
-                if (req.accepts('html')) {
-                    // 直接发送 HTML 文件并结束响应
-                    return res.sendFile(path.join(__dirname, "public", "generate.html"));
-                }
-
-                // 对于 API 客户端(如 X402 平台),返回 402 JSON
-                const amountInSmallestUnit = (parseFloat(priceInUSDC) * 1e6).toString();
-
-                // 402 响应中的资源 URL 应指向 API 端点
-                // 动态构建 resourceUrl,保留原始查询参数(除了 'tx')
-                const queryParams = new URLSearchParams(req.query as Record<string, string>);
-                queryParams.delete('tx');
-                const queryString = queryParams.toString();
-                const resourceUrl = `${req.protocol}://${req.get('host')}${req.path}?${queryString ? queryString + '&' : ''}tx={txHash}`;
-
                 return res.status(402).json({
-                    x402Version: 1,
-                    error: "X-PAYMENT header is required",
-                    accepts: [
-                        {
-                            scheme: "exact",
-                            network: process.env.NETWORK_ID,
-                            maxAmountRequired: amountInSmallestUnit,
-                            resource: resourceUrl,
-                            description: `X402 AI Image Generation Service. Price: ${priceInUSDC} USDC.`,
-                            mimeType: "image/png",
-                            payTo: walletAddress,
-                            maxTimeoutSeconds: 60,
-                            asset: process.env.USDC_CONTRACT_ADDRESS,
-                            extra: {
-                                name: "USD Coin",
-                                version: "2"
-                            },
-                            outputSchema: {
-                                input: {
-                                    type: "http",
-                                    method: req.method, // 动态使用当前请求的方法 (GET 或 POST)
-                                    discoverable: true
-                                },
-                                output: {
-                                    type: "image/png"
-                                }
-                            }
-                        }
-                    ]
+                    error: "Payment Required",
+                    message: "需要提供支付交易哈希 (X-Payment-Tx header 或 body.tx)",
+                    priceInUSDC: process.env.PRICE_IN_USDC,
+                    networkId: process.env.NETWORK_ID,
+                    walletAddress: walletAddress,
+                    usdcContract: process.env.USDC_CONTRACT_ADDRESS
                 });
             }
 
-            // 在调用 RPC 之前,先在后端验证哈希格式
+            // 验证哈希格式
             const txHashRegex = /^0x[a-fA-F0-9]{64}$/;
             if (!txHashRegex.test(paymentTxHash)) {
-                console.log(`❌ 交易哈希格式无效: ${paymentTxHash}`);
                 return res.status(402).json({
-                    error: "Payment Invalid",
-                    message: '交易哈希格式无效,必须是以 "0x" 开头的 66 位十六进制字符串。',
+                    error: "Invalid Transaction Hash",
+                    message: '交易哈希格式无效,必须是以 "0x" 开头的 66 位十六进制字符串',
                     providedTxHash: paymentTxHash
                 });
             }
 
             // 验证支付
             console.log(`🔍 验证支付交易: ${paymentTxHash}`);
-
             const verification = await paymentVerifier.verifyPayment(paymentTxHash);
 
             if (!verification.valid) {
-                res.setHeader('X-402-Accept-Payment', 'base-usdc');
-                res.setHeader('X-402-Price', priceInUSDC);
-                res.setHeader('X-402-Wallet-Address', walletAddress);
-
                 return res.status(402).json({
                     error: "Payment Invalid",
                     message: verification.error || "支付验证失败",
@@ -151,7 +103,6 @@ function paymentMiddleware(priceInUSDC: string) {
 
             // 支付验证成功
             console.log(`✅ 支付验证成功: ${paymentTxHash}, 金额: ${verification.amount} USDC`);
-            res.setHeader('X-402-Payment-Verified', 'true');
 
             (req as any).payment = {
                 txHash: paymentTxHash,
@@ -178,9 +129,9 @@ app.get("/", (req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// 主图像生成端点 - GET 请求用于显示 HTML 页面(不需要支付)
+// GET /generate - 返回支付页面
 app.get("/generate", (req: Request, res: Response) => {
-    // 检查请求来源：浏览器 vs API 客户端
+    // 检查请求来源
     const acceptHeader = req.get('Accept') || '';
     const userAgent = req.get('User-Agent') || '';
 
@@ -192,82 +143,34 @@ app.get("/generate", (req: Request, res: Response) => {
 
     if (isBrowserRequest) {
         // 浏览器请求 - 返回 HTML 页面
-        res.status(402);
         return res.sendFile(path.join(__dirname, "public", "generate.html"), (err) => {
             if (err) {
                 console.error("sendFile 错误:", err);
-                res.send("<h1>Payment Required</h1>");
+                res.status(500).send("<h1>Internal Server Error</h1>");
             }
         });
     }
 
-    // API 请求 - 返回 X402 协议 JSON
-    const priceInUSDC = process.env.PRICE_IN_USDC || "0.1";
-    const amountInSmallestUnit = (parseFloat(priceInUSDC) * 1e6).toString();
-
-    // 动态构建 resource URL
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const resourceUrl = `${protocol}://${host}/generate`;
-
-    res.status(402).json({
-        x402Version: 1,
-        accepts: [{
-            scheme: "exact",
-            network: process.env.NETWORK_ID || "base",
-            maxAmountRequired: amountInSmallestUnit,
-            resource: resourceUrl,
-            description: "X402 Nano Banana - Pay with crypto to generate images with Nano Banana",
-            mimeType: "image/png",
-            payTo: walletAddress,
-            maxTimeoutSeconds: 3600,
-            asset: process.env.USDC_CONTRACT_ADDRESS || "USDC",
-
-            outputSchema: {
-                input: {
-                    type: "http",
-                    method: "POST",
-                    bodyType: "json",
-                    bodyFields: {
-                        tx: {
-                            type: "string",
-                            description: "Payment transaction hash",
-                            required: true,
-                            pattern: "^0x[a-fA-F0-9]{64}$"
-                        },
-                        prompt: {
-                            type: "string",
-                            description: "Image generation prompt",
-                            required: true,
-                            minLength: 1,
-                            maxLength: 1000
-                        }
-                    }
-                },
-                output: {
-                    type: "binary",
-                    contentType: "image/png",
-                    description: "Generated image in PNG format"
-                }
-            },
-
-            extra: {
-                apiVersion: "1.0",
-                provider: "X402 Nano Banana",
-                supportedModels: ["gemini-2.5-flash-image"],
-                imageSize: "1024x1024"
-            }
-        }]
+    // API 请求 - 返回服务信息
+    res.json({
+        service: "X402 Nano Banana - AI Image Generator",
+        endpoint: "/generate",
+        method: "POST",
+        price: `${process.env.PRICE_IN_USDC || "0.1"} USDC`,
+        network: process.env.NETWORK_ID || "base-sepolia",
+        usdcContract: process.env.USDC_CONTRACT_ADDRESS,
+        walletAddress: walletAddress,
+        description: "Generate AI images by POSTing a prompt with payment proof"
     });
 });
 
-// POST 请求用于实际生成图像(需要支付验证)
+// POST /generate - 图像生成端点 (需要支付验证)
 app.post(
     "/generate",
-    paymentMiddleware(process.env.PRICE_IN_USDC || "0.1"),
+    paymentMiddleware(),
     async (req: Request, res: Response) => {
         try {
-            const { prompt } = req.body; // 从请求体中获取 prompt
+            const { prompt } = req.body;
 
             if (!prompt) {
                 return res.status(400).json({
@@ -276,15 +179,8 @@ app.post(
                 });
             }
 
-            // 从 paymentMiddleware 注入的 req.payment 中获取 txHash
             const txHash = (req as any).payment?.txHash;
-            if (!txHash) {
-                // 这是一个安全检查，理论上 paymentMiddleware 会保证 txHash 存在
-                console.error("❌ 严重错误: 支付验证通过但未找到交易哈希!");
-                return res.status(500).json({ error: "Internal Server Error", message: "无法在请求中找到交易凭证" });
-            }
-
-            console.log(`🎨 [POST] 生成图像, 提示词: ${prompt}, 交易: ${txHash}`);
+            console.log(`🎨 生成图像, 提示词: ${prompt}, 交易: ${txHash}`);
 
             // 定义失败时的清理操作
             const cleanupOnFailure = async () => {
@@ -292,26 +188,32 @@ app.post(
                 await paymentVerifier.removeProcessedTx(txHash);
             };
 
-            // 调用 generateImage 并传入清理函数
+            // 调用图像服务生成图像
             const imageBuffer = await imageService.generateImage(prompt, cleanupOnFailure);
 
+            // 返回图像
             res.setHeader("Content-Type", "image/png");
+            res.setHeader("Content-Disposition", "inline; filename=generated-image.png");
             res.send(imageBuffer);
-            console.log(`✅ [POST] 图像生成成功`);
+
+            console.log(`✅ 图像生成成功`);
         } catch (error: any) {
-            console.error("❌ [POST] 图像生成失败:", error);
-            // 返回一个更友好的错误信息，告知用户可以重试
-            res.status(500).json({ error: "Image Generation Failed", message: "图像生成失败，你的支付凭证已回滚，请使用相同的交易哈希重试。" });
+            console.error("❌ 图像生成失败:", error);
+            res.status(500).json({
+                error: "Image Generation Failed",
+                message: "图像生成失败，你的支付凭证已回滚，请使用相同的交易哈希重试。"
+            });
         }
     }
 );
 
-// 新增:向客户端 JS 提供支付信息的端点
+// 向客户端提供支付配置信息
 app.get("/payment-info", (req: Request, res: Response) => {
     res.json({
         priceInUSDC: process.env.PRICE_IN_USDC || "0.1",
-        networkId: process.env.NETWORK_ID,
+        networkId: process.env.NETWORK_ID || "base-sepolia",
         walletAddress: walletAddress,
+        usdcContract: process.env.USDC_CONTRACT_ADDRESS
     });
 });
 
@@ -321,7 +223,7 @@ app.get("/health", (req: Request, res: Response) => {
         status: "ok",
         timestamp: new Date().toISOString(),
         wallet: walletAddress,
-        network: process.env.NETWORK_ID,
+        network: process.env.NETWORK_ID || "base-sepolia",
         uptime: process.uptime()
     });
 });
@@ -346,7 +248,7 @@ const PORT = process.env.PORT || 3000;
 initializeServices().then(() => {
     app.listen(PORT, () => {
         console.log(`\n🚀 X402 Seller 服务已启动,运行在端口 ${PORT}`);
-        console.log(`🎨 访问 http://localhost:${PORT}/generate 查看表单页面`);
+        console.log(`🎨 访问 http://localhost:${PORT}/generate 查看支付页面`);
         console.log(`💰 收款地址: ${walletAddress}\n`);
     });
 }).catch((error) => {
