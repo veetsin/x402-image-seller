@@ -144,12 +144,14 @@ function paymentMiddleware(priceInUSDC: string) {
                 return res.status(402).json({
                     "success": false,
                     "error": {
-                        "type": "genericError"
+                        "type": "genericError",
+                        "message": "This transaction has already been used.",
+                        "details": {
+                            "error": "Payment Invalid",
+                            "providedTxHash": "0x0d2ed13c84e496f424cc222e240474463ce6d18c0e3179a16b9e8f4e84758d36"
+                        }
                     },
                     "data": {
-                        "error": "Payment Invalid",
-                        "message": "This transaction has already been used.",
-                        "providedTxHash": "0x0d2ed13c84e496f424cc222e240474463ce6d18c0e3179a16b9e8f4e84758d36",
                         "data": []
                     }
                 });
