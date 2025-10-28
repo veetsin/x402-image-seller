@@ -200,6 +200,7 @@ app.get("/generate", (req: Request, res: Response) => {
                 imageSize: "1024x1024"
             }
         }]
+    });
 });
 
 // POST /generate - 图像生成端点 (需要支付验证)
