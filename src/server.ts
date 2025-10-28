@@ -152,16 +152,54 @@ app.get("/generate", (req: Request, res: Response) => {
     }
 
     // API 请求 - 返回服务信息
-    res.json({
-        service: "X402 Nano Banana - AI Image Generator",
-        endpoint: "/generate",
-        method: "POST",
-        price: `${process.env.PRICE_IN_USDC || "0.1"} USDC`,
-        network: process.env.NETWORK_ID || "base-sepolia",
-        usdcContract: process.env.USDC_CONTRACT_ADDRESS,
-        walletAddress: walletAddress,
-        description: "Generate AI images by POSTing a prompt with payment proof"
-    });
+    res.status(402).json({
+        x402Version: 1,
+        accepts: [{
+            scheme: "exact",
+            network: process.env.NETWORK_ID || "base",
+            maxAmountRequired: process.env.PRICE_IN_USDC || "0.1",
+            resource: process.env.RESOURCE_URL,
+            description: "X402 Nano Banana - Pay with crypto to generate images with Nano Banana",
+            mimeType: "image/png",
+            payTo: walletAddress,
+            maxTimeoutSeconds: 3600,
+            asset: process.env.USDC_CONTRACT_ADDRESS || "USDC",
+
+            outputSchema: {
+                input: {
+                    type: "http",
+                    method: "POST",
+                    bodyType: "json",
+                    bodyFields: {
+                        tx: {
+                            type: "string",
+                            description: "Payment transaction hash",
+                            required: true,
+                            pattern: "^0x[a-fA-F0-9]{64}$"
+                        },
+                        prompt: {
+                            type: "string",
+                            description: "Image generation prompt",
+                            required: true,
+                            minLength: 1,
+                            maxLength: 1000
+                        }
+                    }
+                },
+                output: {
+                    type: "binary",
+                    contentType: "image/png",
+                    description: "Generated image in PNG format"
+                }
+            },
+
+            extra: {
+                apiVersion: "1.0",
+                provider: "X402 Nano Banana",
+                supportedModels: ["gemini-2.5-flash-image"],
+                imageSize: "1024x1024"
+            }
+        }]
 });
 
 // POST /generate - 图像生成端点 (需要支付验证)
