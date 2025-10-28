@@ -33,6 +33,9 @@
             border-radius: 16px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
+        img.fade-in {
+            animation: fadeIn 0.5s ease;
+        }
         h1 {
             color: #333;
             text-align: center;
@@ -548,18 +551,68 @@
         // Encode transfer function call
         const transferData = encodeTransferData(config.walletAddress, amountInSmallestUnit);
 
-        // Send transaction
-        const txHash = await window.ethereum.request({
-            method: 'eth_sendTransaction',
-            params: [{
-                from: userAddress,
-                to: config.usdcContract,
-                data: transferData,
-                gas: '0x186A0', // 100000 gas
-            }]
-        });
+        try {
+            // Send transaction
+            const txHash = await window.ethereum.request({
+                method: 'eth_sendTransaction',
+                params: [{
+                    from: userAddress,
+                    to: config.usdcContract,
+                    data: transferData,
+                    gas: '0x186A0', // 100000 gas
+                    gasPrice: '0x2540be400', // 10 Gwei (确保有足够的gas price)
+                }]
+            });
 
-        return txHash;
+            return txHash;
+        } catch (error) {
+            if (error.code === 4001) {
+                throw error; // 用户取消，直接抛出
+            }
+            throw new Error(`Transaction failed: ${error.message}`);
+        }
+    }
+    // 等待交易确认的函数
+    async function waitForTransactionConfirmation(txHash) {
+        return new Promise(async (resolve, reject) => {
+            const maxAttempts = 30; // 最大尝试次数（约2.5分钟）
+            const interval = 5000; // 每5秒检查一次
+
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                try {
+                    const txReceipt = await window.ethereum.request({
+                        method: 'eth_getTransactionReceipt',
+                        params: [txHash]
+                    });
+
+                    if (txReceipt) {
+                        if (txReceipt.status === '0x1') {
+                            // 交易成功
+                            console.log('Transaction confirmed:', txReceipt);
+                            resolve(txReceipt);
+                            return;
+                        } else {
+                            // 交易失败
+                            reject(new Error('Transaction failed or was reverted'));
+                            return;
+                        }
+                    }
+
+                    // 交易尚未确认，等待后重试
+                    if (attempt < maxAttempts - 1) {
+                        showMessage('info', '⏳ Waiting for Confirmation:',
+                            `Transaction submitted (${attempt + 1}/${maxAttempts})... This may take a few moments.`);
+                        await new Promise(resolve => setTimeout(resolve, interval));
+                    }
+                } catch (error) {
+                    console.error('Error checking transaction status:', error);
+                    // 继续重试，不立即失败
+                }
+            }
+
+            // 超时
+            reject(new Error('Transaction confirmation timeout. Please check your wallet for transaction status.'));
+        });
     }
 
     // Simple ABI encoding for transfer(address,uint256)
@@ -580,50 +633,46 @@
         }
 
         const prompt = promptInput.value.trim();
-
         if (!prompt) {
             showMessage('error', '❌ Error:', 'Please enter a prompt to generate an image.');
             return;
         }
 
-        // 防止重复提交 - 立即禁用按钮
+        // 禁用按钮
         submitButton.disabled = true;
         submitButton.textContent = '💳 Processing...';
-
-        // Reset UI
         hideMessage();
-        generatedImage.style.display = 'none';
-        generatedImage.src = '';
         loadingSpinner.style.display = 'block';
 
         try {
-            // Step 1: Ensure correct network
+            // Step 1: 确认网络
             const targetNetwork = NETWORKS[config.networkId] || NETWORKS['base-sepolia'];
             const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
-
             if (currentChainId !== targetNetwork.chainId) {
                 showMessage('info', '🔄 Network Check:', `Switching to ${targetNetwork.chainName}...`);
                 await switchNetwork();
             }
 
-            // Step 2: Send payment
-            showMessage('info', 'ℹ️ Payment Required:', 'Please approve the USDC transfer in your wallet...');
+            // Step 2: 发起支付
+            showMessage('info', '💰 Payment Required:', 'Please approve the USDC transfer in your wallet...');
             submitButton.textContent = '⏳ Awaiting Payment...';
-
             const txHash = await sendPayment();
-            console.log('Payment transaction:', txHash);
 
-            // 支付完成后的关键修改：保持按钮禁用状态，等待图片生成
+            // Step 3: 等待交易确认
+            showMessage('info', '⏳ Waiting for Confirmation:', 'Transaction submitted, waiting for confirmation...');
+            submitButton.textContent = '🔍 Confirming...';
+            await waitForTransactionConfirmation(txHash);
+
+            // Step 4: 支付确认 → 开始生成
+            showMessage('success', '✅ Payment Confirmed!', 'Transaction confirmed! Generating your image...');
             submitButton.textContent = '✨ Generating Image...';
-            showMessage('info', '✅ Payment Confirmed:', 'Generating your image, please wait...');
 
-            // Step 3: Generate image with payment proof
             const response = await fetch('/generate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'image/png',
-                    'X-Payment-Tx': txHash // Include payment tx hash
+                    'X-Payment-Tx': txHash
                 },
                 body: JSON.stringify({ prompt })
             });
@@ -631,59 +680,32 @@
             loadingSpinner.style.display = 'none';
 
             if (!response.ok) {
-                let errorData = null;
-                const contentType = response.headers.get('content-type') || '';
-
-                try {
-                    if (contentType.includes('application/json')) {
-                        errorData = await response.json();
-                    } else {
-                        const text = await response.text();
-                        errorData = { message: text };
-                    }
-                } catch (e) {
-                    errorData = { message: 'Unknown error occurred' };
-                }
-
-                const errorMsg = errorData.message || errorData.error || 'Image generation failed';
-                showMessage('error', `❌ Error (${response.status}):`, errorMsg);
-
-                // 发生错误时重新启用按钮
-                submitButton.disabled = false;
-                submitButton.textContent = '💰 Pay & Generate';
+                const errMsg = await response.text();
+                showMessage('error', `❌ Error (${response.status}):`, errMsg || 'Image generation failed.');
             } else {
-                // Success - display image
+                // ✅ 显示多张图片（新图叠加旧图之上）
                 const imageBlob = await response.blob();
                 const imageUrl = URL.createObjectURL(imageBlob);
-                generatedImage.src = imageUrl;
-                generatedImage.style.display = 'block';
-                generatedImage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                const newImg = document.createElement('img');
+                newImg.src = imageUrl;
+                newImg.alt = 'Generated Image';
+                newImg.style.display = 'block';
+                newImg.classList.add('fade-in');
+
+                document.getElementById('imageContainer').prepend(newImg);
 
                 showMessage('success', '✨ Success!', 'Your image has been generated successfully!');
-
-                // Clear the prompt for next generation
-                promptInput.value = '';
-                charCount.textContent = '0 / 1000';
-                charCount.classList.remove('warning', 'danger');
-
-                // 图片生成完成后重新启用按钮
-                submitButton.disabled = false;
-                submitButton.textContent = '💰 Pay & Generate';
             }
+
         } catch (error) {
             console.error('Error:', error);
+            showMessage('error', '❌ Error:', error.message || 'Unknown error.');
+        } finally {
+            // ✅ 无论成功或失败都恢复按钮
             loadingSpinner.style.display = 'none';
-
-            // 发生错误时重新启用按钮
             submitButton.disabled = false;
             submitButton.textContent = '💰 Pay & Generate';
-
-            if (error.code === 4001) {
-                showMessage('info', 'ℹ️ Cancelled:', 'Payment was cancelled by user.');
-            } else {
-                showMessage('error', '❌ Error:',
-                    `${error.message}<br><small>Please check your wallet and try again.</small>`);
-            }
         }
     });
 
