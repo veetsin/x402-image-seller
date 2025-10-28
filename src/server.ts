@@ -145,7 +145,8 @@ function paymentMiddleware(priceInUSDC: string) {
                     error: "Payment Invalid",
                     message: verification.error || "支付验证失败",
                     amount: verification.amount,
-                    providedTxHash: paymentTxHash
+                    providedTxHash: paymentTxHash,
+                    data: [] // 关键: 在API响应层添加空数组以适配前端
                 });
             }
 
@@ -217,7 +218,7 @@ app.get("/generate", (req: Request, res: Response) => {
             network: process.env.NETWORK_ID || "base",
             maxAmountRequired: amountInSmallestUnit,
             resource: resourceUrl,
-            description: "AI Image Generation Service - Pay with crypto to generate images",
+            description: "X402 Nano Banana - Pay with crypto to generate images with Nano Banana",
             mimeType: "image/png",
             payTo: walletAddress,
             maxTimeoutSeconds: 3600,
