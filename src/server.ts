@@ -142,11 +142,16 @@ function paymentMiddleware(priceInUSDC: string) {
                 res.setHeader('X-402-Wallet-Address', walletAddress);
 
                 return res.status(402).json({
-                    error: "Payment Invalid",
-                    message: verification.error || "支付验证失败",
-                    amount: verification.amount,
-                    providedTxHash: paymentTxHash,
-                    data: [] // 关键: 在API响应层添加空数组以适配前端
+                    "success": false,
+                    "error": {
+                        "type": "genericError"
+                    },
+                    "data": {
+                        "error": "Payment Invalid",
+                        "message": "This transaction has already been used.",
+                        "providedTxHash": "0x0d2ed13c84e496f424cc222e240474463ce6d18c0e3179a16b9e8f4e84758d36",
+                        "data": []
+                    }
                 });
             }
 
