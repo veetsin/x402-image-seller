@@ -586,13 +586,15 @@
             return;
         }
 
+        // 防止重复提交 - 立即禁用按钮
+        submitButton.disabled = true;
+        submitButton.textContent = '💳 Processing...';
+
         // Reset UI
         hideMessage();
         generatedImage.style.display = 'none';
         generatedImage.src = '';
         loadingSpinner.style.display = 'block';
-        submitButton.disabled = true;
-        submitButton.textContent = '💳 Processing Payment...';
 
         try {
             // Step 1: Ensure correct network
@@ -606,14 +608,16 @@
 
             // Step 2: Send payment
             showMessage('info', 'ℹ️ Payment Required:', 'Please approve the USDC transfer in your wallet...');
+            submitButton.textContent = '⏳ Awaiting Payment...';
 
             const txHash = await sendPayment();
             console.log('Payment transaction:', txHash);
 
-            submitButton.textContent = '⏳ Generating Image...';
-            showMessage('info', 'ℹ️ Payment Sent:', 'Waiting for confirmation and generating your image...');
+            // 支付完成后的关键修改：保持按钮禁用状态，等待图片生成
+            submitButton.textContent = '✨ Generating Image...';
+            showMessage('info', '✅ Payment Confirmed:', 'Generating your image, please wait...');
 
-            // Step 2: Generate image with payment proof
+            // Step 3: Generate image with payment proof
             const response = await fetch('/generate', {
                 method: 'POST',
                 headers: {
@@ -625,8 +629,6 @@
             });
 
             loadingSpinner.style.display = 'none';
-            submitButton.disabled = false;
-            submitButton.textContent = '💰 Pay & Generate';
 
             if (!response.ok) {
                 let errorData = null;
@@ -645,6 +647,10 @@
 
                 const errorMsg = errorData.message || errorData.error || 'Image generation failed';
                 showMessage('error', `❌ Error (${response.status}):`, errorMsg);
+
+                // 发生错误时重新启用按钮
+                submitButton.disabled = false;
+                submitButton.textContent = '💰 Pay & Generate';
             } else {
                 // Success - display image
                 const imageBlob = await response.blob();
@@ -659,11 +665,16 @@
                 promptInput.value = '';
                 charCount.textContent = '0 / 1000';
                 charCount.classList.remove('warning', 'danger');
-                submitButton.disabled = true;
+
+                // 图片生成完成后重新启用按钮
+                submitButton.disabled = false;
+                submitButton.textContent = '💰 Pay & Generate';
             }
         } catch (error) {
             console.error('Error:', error);
             loadingSpinner.style.display = 'none';
+
+            // 发生错误时重新启用按钮
             submitButton.disabled = false;
             submitButton.textContent = '💰 Pay & Generate';
 
