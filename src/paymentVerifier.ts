@@ -101,6 +101,7 @@ export class PaymentVerifier {
   async verifyPayment(txHash: string): Promise<{
     valid: boolean;
     amount?: number;
+    data?: any[]; // 增加 data 字段以适配前端
     error?: string;
   }> {
     try {
@@ -110,7 +111,8 @@ export class PaymentVerifier {
       if (this.processedTxs.has(lowerCaseTxHash)) {
         return {
           valid: false,
-          error: "This transaction has already been used."
+          error: "This transaction has already been used.",
+          data: []
         };
       }
 
@@ -122,7 +124,8 @@ export class PaymentVerifier {
       if (!receipt) {
         return {
           valid: false,
-          error: "Transaction not found or not yet confirmed. Please wait for block confirmation and try again."
+          error: "Transaction not found or not yet confirmed. Please wait for block confirmation and try again.",
+          data: []
         };
       }
 
@@ -132,7 +135,8 @@ export class PaymentVerifier {
       if (receipt.status !== 1) {
         return {
           valid: false,
-          error: "Transaction failed (status: 0)."
+          error: "Transaction failed (status: 0).",
+          data: []
         };
       }
 
@@ -176,15 +180,17 @@ export class PaymentVerifier {
       if (!transferFound) {
         return {
           valid: false,
-          error: `USDC transfer to address ${this.walletAddress} not found.`
+          error: `USDC transfer to address ${this.walletAddress} not found.`,
+          data: []
         };
       }
 
       if (transferAmount < this.priceInUSDC) {
         return {
           valid: false,
+          error: `Insufficient payment amount. Required: ${this.priceInUSDC} USDC, Paid: ${transferAmount} USDC.`,
           amount: transferAmount,
-          error: `Insufficient payment amount. Required: ${this.priceInUSDC} USDC, Paid: ${transferAmount} USDC.`
+          data: []
         };
       }
 
@@ -203,7 +209,8 @@ export class PaymentVerifier {
       console.error("  ❌ Payment verification error:", error.message);
       return {
         valid: false,
-        error: error.message || "An error occurred during verification."
+        error: error.message || "An error occurred during verification.",
+        data: []
       };
     }
   }
