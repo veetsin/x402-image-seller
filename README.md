@@ -1,6 +1,7 @@
 # X402 Image Seller
 
 An AI-powered image generation service implementing the [X402 Payment Protocol](https://402.foundation/) on the Base blockchain. This service allows users to pay with USDC to generate AI images using Google's Gemini AI.
+[click to view](https://x402-image.onrender.com/)
 
 ## Features
 
@@ -201,7 +202,7 @@ MIT
 
 ## Author
 
-Your Name
+Veetsin
 
 ## Acknowledgments
 
